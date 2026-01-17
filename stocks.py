@@ -248,23 +248,34 @@ if page == "Mina Innehav":
             # Visa siffror i kolumner (Pris & RSI)
             m_col1, m_col2 = st.columns(2)
             
+            # CSS för att minska avståndet mellan rubrik och metric
+            st.markdown("""
+                <style>
+                div[data-testid='stMetricValue'] {
+                    margin-top: -15px !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            
             with m_col1:
+                st.markdown("<h3 style='font-weight: bold; font-size: 1.2em; margin-bottom: 0; margin-top: 0; padding-bottom: 0; line-height: 1.2;'>Pris & Utveckling</h3>", unsafe_allow_html=True)
                 st.metric(
-                    label="Pris & Utveckling",
+                    label="",
                     value=f"{last_close:.2f} {'SEK' if '.ST' in ticker else 'CAD'}",
                     delta=f"{pct_change:.2f} %"
                 )
             
             with m_col2:
+                st.markdown("<h3 style='font-weight: bold; font-size: 1.2em; margin-bottom: 0; margin-top: 0; padding-bottom: 0; line-height: 1.2;'>RSI Indikator</h3>", unsafe_allow_html=True)
                 if rsi_value:
                     st.metric(
-                        label="RSI Indikator",
+                        label="",
                         value=f"{rsi_value:.1f}",
                         delta=rsi_text,
                         delta_color=rsi_delta_color
                     )
                 else:
-                    st.metric(label="RSI", value="N/A", delta="För lite data")
+                    st.metric(label="", value="N/A", delta="För lite data")
             
             # Volymjämförelse med färgkodning
             if len(data) > 1:
