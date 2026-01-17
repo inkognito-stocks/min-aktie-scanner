@@ -443,16 +443,47 @@ elif page == "Market Scanner":
 elif page == "Aktieinfo":
     st.title("📊 Aktieinfo")
     
-    # Om ingen ticker vald från Market Scanner, låt användaren ange en
+    # Samla alla tickers från ticker_lists
+    all_available_tickers = []
+    for market, sublists in ticker_lists.items():
+        for list_name, tickers in sublists.items():
+            all_available_tickers.extend(tickers)
+    
+    # Ta bort dubbletter och sortera
+    all_available_tickers = sorted(list(set(all_available_tickers)))
+    
+    # Om en ticker vald från Market Scanner, använd den
     if st.session_state.selected_ticker:
         ticker_input = st.session_state.selected_ticker
-        st.info(f"Visar information för: **{ticker_input}**")
-        # Rensa selection så den inte stannar kvar vid reload
+        st.info(f"Visar information för: **{ticker_input}** (vald från Market Scanner)")
         st.session_state.selected_ticker = None
     else:
-        ticker_input = st.text_input("Ange ticker (t.ex. ADVE.ST, MOG.V):", value="")
+        # Sökfält för att filtrera bolag
+        search_query = st.text_input("🔍 Sök bolag (t.ex. skriv 'A' för alla som börjar med A):", value="", placeholder="Skriv här för att filtrera...")
+        
+        # Filtrera tickers baserat på sökningen
+        if search_query:
+            filtered_tickers = [t for t in all_available_tickers if t.upper().startswith(search_query.upper())]
+        else:
+            # Om ingen sökning, visa alla
+            filtered_tickers = all_available_tickers
+        
+        if not filtered_tickers:
+            st.warning(f"Inga bolag hittades som börjar med '{search_query}'. Prova att söka på en annan bokstav eller ticker.")
+            st.stop()
+        
+        # Välj ticker från filtrerad lista
+        if len(filtered_tickers) == 1:
+            ticker_input = filtered_tickers[0]
+            st.success(f"Valt: **{ticker_input}**")
+        else:
+            ticker_input = st.selectbox(
+                f"Välj bolag ({len(filtered_tickers)} matchningar):",
+                options=filtered_tickers,
+                index=0 if filtered_tickers else None
+            )
+        
         if not ticker_input:
-            st.warning("Ange en ticker ovan eller välj en aktie från Market Scanner.")
             st.stop()
     
     # Hämta Yahoo Finance data
