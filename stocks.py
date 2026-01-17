@@ -115,7 +115,11 @@ st.set_page_config(layout="wide", page_title="Aktie Dashboard")
 
 # --- SIDOMENY ---
 st.sidebar.title("Navigering")
-page = st.sidebar.radio("Gå till:", ["Mina Innehav", "Market Scanner", "Nyheter"])
+page = st.sidebar.radio("Gå till:", ["Mina Innehav", "Market Scanner", "Aktieinfo", "Nyheter"])
+
+# Initiera session state för vald ticker
+if 'selected_ticker' not in st.session_state:
+    st.session_state.selected_ticker = None
 
 # ==========================================
 # SIDA 1: MINA INNEHAV
@@ -307,7 +311,7 @@ elif page == "Market Scanner":
 
     # Förklaringstext
     if scan_mode == "🚀 Stora Rörelser":
-        st.info("Visar aktier som gått upp eller ner mer än **3%** idag.")
+        st.info("Visar aktier som gått upp eller ner mer än **5%** idag.")
     elif scan_mode == "🔊 Volym-Raketer":
         st.info("Visar aktier som handlas med **dubbelt så hög volym** som normalt (2.0x).")
     elif scan_mode == "⚠️ RSI-Signaler":
@@ -391,32 +395,257 @@ elif page == "Market Scanner":
             
             if scan_mode == "🚀 Stora Rörelser":
                 df_results = df_results.sort_values("Utv %", ascending=False)
-                st.dataframe(df_results, column_config={"Länk": st.column_config.LinkColumn("Nyheter")}, hide_index=True, width='stretch')
-                
             elif scan_mode == "🔊 Volym-Raketer":
                 df_results = df_results.sort_values("RVol (x)", ascending=False)
-                st.dataframe(df_results, column_config={"Länk": st.column_config.LinkColumn("Nyheter")}, hide_index=True, width='stretch')
-                
             elif scan_mode == "⚠️ RSI-Signaler":
                 df_results = df_results.sort_values("RSI", ascending=True)
-                
-                # Färgläggning för RSI
-                def color_rsi(val):
-                    if val < 30: return 'background-color: #d4edda; color: green'
-                    if val > 70: return 'background-color: #f8d7da; color: red'
-                    return ''
-
-                st.dataframe(
-                    df_results.style.map(color_rsi, subset=['RSI']).format({"Pris": "{:.2f}", "Utv %": "{:.2f}%", "RSI": "{:.1f}"}),
-                    column_config={"Länk": st.column_config.LinkColumn("Nyheter")},
-                    hide_index=True,
-                    width='stretch'
-                )
+            
+            # Lägg till kolumn med knappar för att visa detaljer
+            st.markdown("**Klicka på en aktie nedan för att se detaljerad information:**")
+            
+            # Visa varje rad med en knapp
+            for idx, row in df_results.iterrows():
+                ticker = row['Ticker']
+                with st.container():
+                    col1, col2, col3, col4, col5, col6 = st.columns([2, 1.5, 1.5, 1.5, 1.5, 1])
+                    
+                    with col1:
+                        st.markdown(f"**{ticker}**")
+                    with col2:
+                        st.write(f"{row['Pris']:.2f}")
+                    with col3:
+                        pct = row['Utv %']
+                        color = '#00aa00' if pct > 0 else '#ff0000' if pct < 0 else '#000000'
+                        st.markdown(f"<span style='color: {color}'>{pct:+.2f}%</span>", unsafe_allow_html=True)
+                    with col4:
+                        st.write(f"{row['RVol (x)']:.1f}x")
+                    with col5:
+                        rsi = row['RSI']
+                        if rsi < 30:
+                            rsi_color = '#00aa00'
+                        elif rsi > 70:
+                            rsi_color = '#ff0000'
+                        else:
+                            rsi_color = '#000000'
+                        st.markdown(f"<span style='color: {rsi_color}'>{rsi:.1f}</span>", unsafe_allow_html=True)
+                    with col6:
+                        if st.button("📊 Info", key=f"info_{ticker}_{idx}"):
+                            st.session_state.selected_ticker = ticker
+                            st.rerun()
+                    
+                    st.divider()
         else:
             st.warning("Inga aktier matchade dina kriterier just nu.")
 
 # ==========================================
-# SIDA 3: NYHETER
+# SIDA 3: AKTIEINFO (DETALJERAD YAHOO FINANCE DATA)
+# ==========================================
+elif page == "Aktieinfo":
+    st.title("📊 Aktieinfo")
+    
+    # Om ingen ticker vald från Market Scanner, låt användaren ange en
+    if st.session_state.selected_ticker:
+        ticker_input = st.session_state.selected_ticker
+        st.info(f"Visar information för: **{ticker_input}**")
+        # Rensa selection så den inte stannar kvar vid reload
+        st.session_state.selected_ticker = None
+    else:
+        ticker_input = st.text_input("Ange ticker (t.ex. ADVE.ST, MOG.V):", value="")
+        if not ticker_input:
+            st.warning("Ange en ticker ovan eller välj en aktie från Market Scanner.")
+            st.stop()
+    
+    # Hämta Yahoo Finance data
+    with st.spinner("Hämtar information från Yahoo Finance..."):
+        try:
+            ticker_obj = yf.Ticker(ticker_input)
+            info = ticker_obj.info
+            hist = ticker_obj.history(period="1y")
+        except Exception as e:
+            st.error(f"Kunde inte hämta data för {ticker_input}: {e}")
+            st.stop()
+    
+    if hist is None or hist.empty:
+        st.error("Ingen historisk data tillgänglig för denna ticker.")
+        st.stop()
+    
+    # Företagsinformation
+    st.header("🏢 Företagsinformation")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        company_name = info.get('longName', info.get('shortName', ticker_input))
+        st.subheader(company_name)
+        if 'sector' in info and info['sector']:
+            st.write(f"**Sektor:** {info['sector']}")
+        if 'industry' in info and info['industry']:
+            st.write(f"**Bransch:** {info['industry']}")
+        if 'country' in info and info['country']:
+            st.write(f"**Land:** {info['country']}")
+        if 'website' in info and info['website']:
+            st.write(f"**Webbplats:** {info['website']}")
+    
+    with col2:
+        if 'longBusinessSummary' in info and info['longBusinessSummary']:
+            st.markdown("**Beskrivning:**")
+            st.write(info['longBusinessSummary'][:500] + "..." if len(info.get('longBusinessSummary', '')) > 500 else info['longBusinessSummary'])
+    
+    st.divider()
+    
+    # Aktuell kurs och statistik
+    st.header("💹 Aktuell Kurs & Statistik")
+    
+    current_price = hist['Close'].iloc[-1]
+    prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
+    change_pct = ((current_price - prev_close) / prev_close) * 100
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        currency = info.get('currency', 'SEK' if '.ST' in ticker_input else 'CAD')
+        price_color = '#00aa00' if change_pct > 0 else '#ff0000' if change_pct < 0 else '#000000'
+        st.metric("Nuvarande Pris", f"{current_price:.2f} {currency}", f"{change_pct:+.2f}%")
+    
+    with col2:
+        market_cap = info.get('marketCap', info.get('enterpriseValue', None))
+        if market_cap:
+            st.metric("Börsvärde", f"{market_cap / 1e9:.2f} B {currency}" if market_cap >= 1e9 else f"{market_cap / 1e6:.2f} M {currency}")
+    
+    with col3:
+        pe_ratio = info.get('trailingPE', info.get('forwardPE', None))
+        if pe_ratio:
+            st.metric("P/E-tal", f"{pe_ratio:.2f}")
+    
+    with col4:
+        dividend_yield = info.get('dividendYield', None)
+        if dividend_yield:
+            st.metric("Utdelningsavkastning", f"{dividend_yield * 100:.2f}%")
+    
+    # Ytterligare viktiga nyckeltal
+    st.subheader("📈 Finansiella Nyckeltal")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if '52WeekHigh' in info:
+            st.metric("52-veckors högsta", f"{info['52WeekHigh']:.2f}")
+        if '52WeekLow' in info:
+            st.metric("52-veckors lägsta", f"{info['52WeekLow']:.2f}")
+    
+    with col2:
+        if 'volume' in info:
+            st.metric("Dagens volym", f"{info['volume']:,.0f}")
+        if 'averageVolume' in info:
+            st.metric("Snittvolym (90d)", f"{info['averageVolume']:,.0f}")
+    
+    with col3:
+        if 'bookValue' in info:
+            st.metric("Bokfört värde", f"{info['bookValue']:.2f}")
+        if 'priceToBook' in info:
+            st.metric("P/B-tal", f"{info['priceToBook']:.2f}")
+    
+    with col4:
+        if 'profitMargins' in info:
+            st.metric("Vinstmarginal", f"{info['profitMargins'] * 100:.2f}%")
+        if 'revenuePerShare' in info:
+            st.metric("Omsättning per aktie", f"{info['revenuePerShare']:.2f}")
+    
+    st.divider()
+    
+    # Prisgraf med candlestick
+    st.header("📊 Prisgraf")
+    
+    # RSI-beräkning
+    if len(hist) >= 14:
+        hist['RSI'] = calculate_rsi(hist)
+        rsi_value = hist['RSI'].iloc[-1]
+    else:
+        rsi_value = None
+    
+    # Candlestick-graf med volym
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        row_heights=[0.5, 0.25, 0.25],
+        subplot_titles=('Pris (Candlestick)', 'Volym', 'RSI')
+    )
+    
+    # Candlestick
+    fig.add_trace(
+        go.Candlestick(
+            x=hist.index,
+            open=hist['Open'],
+            high=hist['High'],
+            low=hist['Low'],
+            close=hist['Close'],
+            name='Pris'
+        ),
+        row=1, col=1
+    )
+    
+    # Volym
+    colors = ['red' if hist['Close'].iloc[i] < hist['Open'].iloc[i] else 'green' 
+              for i in range(len(hist))]
+    fig.add_trace(
+        go.Bar(x=hist.index, y=hist['Volume'], name='Volym', marker_color=colors),
+        row=2, col=1
+    )
+    
+    # RSI om tillgängligt
+    if rsi_value is not None:
+        fig.add_trace(
+            go.Scatter(x=hist.index, y=hist['RSI'], name='RSI', line=dict(color='purple')),
+            row=3, col=1
+        )
+        # Lägg till RSI-nivåer (30 och 70)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1, annotation_text="Översåld (30)")
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1, annotation_text="Överköpt (70)")
+    
+    fig.update_layout(height=900, showlegend=False, xaxis_rangeslider_visible=False, template='plotly_white')
+    fig.update_xaxes(title_text="Datum", row=3, col=1)
+    fig.update_yaxes(title_text="Pris", row=1, col=1)
+    fig.update_yaxes(title_text="Volym", row=2, col=1)
+    if rsi_value is not None:
+        fig.update_yaxes(title_text="RSI", row=3, col=1)
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # RSI-status om tillgängligt
+    if rsi_value is not None:
+        st.subheader("📊 RSI Indikator")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if rsi_value < 30:
+                rsi_color = '#00aa00'
+                rsi_status = "🟢 ÖVERSÅLD (Köpläge)"
+            elif rsi_value > 70:
+                rsi_color = '#ff0000'
+                rsi_status = "🔴 ÖVERKÖPT (Varning)"
+            else:
+                rsi_color = '#000000'
+                rsi_status = "⚪ NEUTRAL"
+            st.markdown(f"<div style='font-size: 2rem; font-weight: 600; color: {rsi_color};'>{rsi_value:.1f}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='color: {rsi_color}; font-weight: 500;'>{rsi_status}</div>", unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # Nyheter om bolaget
+    st.header("📰 Senaste Nyheter")
+    company_name_for_news = company_name.split()[0] if company_name else ticker_input
+    news_items = fetch_company_news(company_name_for_news, ticker_input)
+    
+    if news_items:
+        for item in news_items[:5]:
+            with st.expander(item.title):
+                if 'published' in item:
+                    st.caption(f"📅 {item.published}")
+                if 'link' in item:
+                    st.markdown(f"👉 [Läs hela artikeln]({item.link})")
+    else:
+        st.info("Inga nyheter hittades för denna aktie just nu.")
+
+# ==========================================
+# SIDA 4: NYHETER
 # ==========================================
 elif page == "Nyheter":
     st.title("📰 Nyheter: Advenica & Mogotes")

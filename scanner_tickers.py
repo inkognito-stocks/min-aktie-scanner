@@ -1,6 +1,6 @@
 # scanner_tickers.py
 
-# "THE BEAST" - En massiv lista för maximal täckning
+# "THE BEAST" - Uppdaterad med USA 🇺🇸
 ticker_lists = {
     "Sverige 🇸🇪": {
         "Large Cap (OMXS30 & Co)": [
@@ -96,6 +96,30 @@ ticker_lists = {
             "ION.CN", "JANE.CN", "LIFT.CN", "LITE.CN", "MEDV.CN", "MSET.CN",
             "NUMI.TO", "OPT.CN", "PLTH.CN", "RIV.CN", "RVV.CN", "THRM.CN",
             "TRIP.CN", "TRUL.CN", "VEXT.CN", "XPHY.CN"
+        ]
+    },
+    "USA 🇺🇸": {
+        "Small/Mid Tech & Growth (Volatile Favorites)": [
+            "PLTR", "SOFI", "DKNG", "HOOD", "RIVN", "LCID", "PLUG", "ROKU", "U", "RBLX",
+            "OPEN", "AFRM", "UPST", "AI", "PATH", "IOT", "MDB", "SNOW", "DDOG", "NET",
+            "ZS", "CRWD", "TTD", "APP", "DUOL", "HIMS", "IONQ", "JOBY", "ACHR", "ASTS"
+        ],
+        "Crypto & Fintech (High Beta)": [
+            "COIN", "MARA", "RIOT", "CLSK", "MSTR", "HUT", "BITF", "SQ", "PYPL", "SOFI",
+            "AFRM", "UPST", "HOOD", "BAC", "C", "JPM"
+        ],
+        "Biotech & Pharma (Small/Mid)": [
+            "DNA", "NVTA", "PACB", "CRSP", "NTLA", "BEAM", "EDIT", "FATE", "IOVA", "ITCI",
+            "KRTX", "MDGL", "NVAX", "SAVA", "SRPT", "VRTX", "MRNA", "BNTX"
+        ],
+        "Energy, Uranium & Commodities (US Listings)": [
+            "CCJ", "UUUU", "UEC", "DNN", "NXE", "URA", "URNM", # Uran
+            "FCEL", "BE", "BLDP", "RUN", "ENPH", "SEDG", "FSLR", # Grön Energi
+            "XOM", "CVX", "COP", "OXY", "DVN", "EOG", "PXD", "HAL", "SLB" # Olja
+        ],
+        "Retail & Meme Favorites (High Volatility)": [
+            "GME", "AMC", "KOSS", "BB", "NOK", "TLRY", "CGC", "SNDL", "SPCE", "NKLA",
+            "MULLN", "FFIE", "CVNA", "CHWY", "PTON", "FUBO", "WISH"
         ]
     }
 }
