@@ -43,25 +43,38 @@ if page == "Mina Innehav":
         st.session_state.selected_period = "1y"
 
     if date_mode == "Snabbknappar":
-        # Snabbknappar för olika perioder
-        period_options = [
-            ("1 mån", "1mo"),
-            ("3 månader", "3mo"),
-            ("6 månader", "6mo"),
-            ("12 månader", "12mo"),
-            ("3 år", "3y"),
-            ("5 år", "5y")
-        ]
+        # Rullgardin för olika perioder
+        period_options = {
+            "1 mån": "1mo",
+            "3 månader": "3mo",
+            "6 månader": "6mo",
+            "12 månader": "12mo",
+            "3 år": "3y",
+            "5 år": "5y"
+        }
         
-        cols = st.columns(6)
+        # Hitta valt label baserat på nuvarande period
+        default_index = 0
+        current_label = None
+        for idx, (label, value) in enumerate(period_options.items()):
+            if value == st.session_state.selected_period:
+                default_index = idx
+                current_label = label
+                break
         
-        for i, (label, value) in enumerate(period_options):
-            with cols[i]:
-                # Markera vald knapp
-                button_type = "primary" if st.session_state.selected_period == value else "secondary"
-                if st.button(label, key=f"period_{i}", use_container_width=True, type=button_type):
-                    st.session_state.selected_period = value
+        # Om ingen matchning, använd första alternativet
+        if current_label is None:
+            current_label = list(period_options.keys())[0]
+            default_index = 0
         
+        selected_label = st.selectbox(
+            "Välj tidsperiod:",
+            options=list(period_options.keys()),
+            index=default_index,
+            key="period_selectbox"
+        )
+        
+        st.session_state.selected_period = period_options[selected_label]
         period = st.session_state.selected_period
         start_date = None
         end_date = None
@@ -124,10 +137,10 @@ if page == "Mina Innehav":
                 continue
 
             # Prisgraf
-            st.line_chart(data['Close'], use_container_width=True)
+            st.line_chart(data['Close'], width='stretch')
 
             # Volymgraf med staplar
-            st.bar_chart(data['Volume'], use_container_width=True)
+            st.bar_chart(data['Volume'], width='stretch')
 
             # Statistik
             last_close = data['Close'].iloc[-1]
@@ -243,7 +256,8 @@ elif page == "Market Scanner":
                     st.dataframe(
                         winners,
                         column_config={"Länk": st.column_config.LinkColumn("Nyheter")},
-                        hide_index=True
+                        hide_index=True,
+                        width='stretch'
                     )
                 else:
                     st.write("Inga aktier upp > 3% idag.")
@@ -254,7 +268,8 @@ elif page == "Market Scanner":
                     st.dataframe(
                         losers,
                         column_config={"Länk": st.column_config.LinkColumn("Nyheter")},
-                        hide_index=True
+                        hide_index=True,
+                        width='stretch'
                     )
                 else:
                     st.write("Inga aktier ner > 3% idag.")
