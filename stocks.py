@@ -4,14 +4,31 @@ import pandas as pd
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import feedparser   # NYTT: För att hämta nyheter
+import urllib.parse # NYTT: För att skapa sök-länkar
 
-# --- NY FUNKTION: RÄKNA UT RSI ---
+# --- FUNKTIONER ---
+
+# 1. Räkna ut RSI
 def calculate_rsi(data, window=14):
     delta = data['Close'].diff()
     gain = (delta.where(delta > 0, 0)).ewm(alpha=1/window, adjust=False).mean()
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/window, adjust=False).mean()
     rs = gain / loss
     return 100 - (100 / (1 + rs))
+
+# 2. Hämta nyheter (Google News RSS) - NY FUNKTION
+def fetch_company_news(company_name):
+    # Skapa en säker sökterm
+    query = urllib.parse.quote(company_name)
+    # URL till Google News RSS sökning (Svenska nyheter)
+    rss_url = f"https://news.google.com/rss/search?q={query}&hl=sv&gl=SE&ceid=SE:sv"
+    
+    try:
+        feed = feedparser.parse(rss_url)
+        return feed.entries[:5]  # Hämta de 5 senaste nyheterna
+    except Exception:
+        return []
 
 # Importera dina listor från den andra filen
 try:
@@ -26,7 +43,8 @@ st.set_page_config(layout="wide", page_title="Aktie Dashboard")
 
 # --- SIDOMENY ---
 st.sidebar.title("Navigering")
-page = st.sidebar.radio("Gå till:", ["Mina Innehav", "Market Scanner"])
+# UPPDATERAT: La till "Nyheter" i menyn
+page = st.sidebar.radio("Gå till:", ["Mina Innehav", "Market Scanner", "Nyheter"])
 
 # ==========================================
 # SIDA 1: MINA INNEHAV (Advenica & Mogotes)
@@ -259,23 +277,58 @@ if page == "Mina Innehav":
             
             with m_col1:
                 st.markdown("<h3 style='font-weight: bold; font-size: 1.2em; margin-bottom: 0; margin-top: 0; padding-bottom: 0; line-height: 1.2;'>Pris & Utveckling</h3>", unsafe_allow_html=True)
-                st.metric(
-                    label="",
-                    value=f"{last_close:.2f} {'SEK' if '.ST' in ticker else 'CAD'}",
-                    delta=f"{pct_change:.2f} %"
+                # Färgkoda kursen baserat på utveckling
+                currency_symbol = 'SEK' if '.ST' in ticker else 'CAD'
+                if pct_change > 0:
+                    price_color = '#00aa00'  # Grön vid uppgång
+                    delta_color = '#00aa00'
+                    delta_symbol = '↑'
+                elif pct_change < 0:
+                    price_color = '#ff0000'  # Röd vid nedgång
+                    delta_color = '#ff0000'
+                    delta_symbol = '↓'
+                else:
+                    price_color = '#000000'  # Svart vid ingen förändring
+                    delta_color = '#000000'
+                    delta_symbol = '→'
+                
+                st.markdown(
+                    f"<div style='font-size: 2rem; font-weight: 600; color: {price_color}; margin-top: -15px;'>{last_close:.2f} {currency_symbol}</div>",
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f"<div style='font-size: 0.875rem; color: {delta_color}; font-weight: 500;'>{delta_symbol} {abs(pct_change):.2f} %</div>",
+                    unsafe_allow_html=True
                 )
             
             with m_col2:
                 st.markdown("<h3 style='font-weight: bold; font-size: 1.2em; margin-bottom: 0; margin-top: 0; padding-bottom: 0; line-height: 1.2;'>RSI Indikator</h3>", unsafe_allow_html=True)
                 if rsi_value:
-                    st.metric(
-                        label="",
-                        value=f"{rsi_value:.1f}",
-                        delta=rsi_text,
-                        delta_color=rsi_delta_color
+                    # Färgkoda RSI-värdet baserat på nivå
+                    if rsi_value < 30:
+                        rsi_display_color = '#00aa00'  # Grön - översåld (köpläge)
+                    elif rsi_value > 70:
+                        rsi_display_color = '#ff0000'  # Röd - överköpt (varning)
+                    else:
+                        rsi_display_color = '#000000'  # Svart - neutral
+                    
+                    st.markdown(
+                        f"<div style='font-size: 2rem; font-weight: 600; color: {rsi_display_color}; margin-top: -15px;'>{rsi_value:.1f}</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        f"<div style='font-size: 0.875rem; color: {rsi_display_color}; font-weight: 500;'>{rsi_text}</div>",
+                        unsafe_allow_html=True
                     )
                 else:
-                    st.metric(label="", value="N/A", delta="För lite data")
+                    st.markdown(
+                        "<div style='font-size: 2rem; font-weight: 600; color: #000000; margin-top: -15px;'>N/A</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown(
+                        "<div style='font-size: 0.875rem; color: #000000; font-weight: 500;'>För lite data</div>",
+                        unsafe_allow_html=True
+                    )
             
             # Volymjämförelse med färgkodning
             if len(data) > 1:
@@ -395,3 +448,39 @@ elif page == "Market Scanner":
                     st.write("Inga aktier ner > 3% idag.")
         else:
             st.warning("Hittade ingen data för listan.")
+
+# ==========================================
+# SIDA 3: NYHETER (NY SIDA)
+# ==========================================
+elif page == "Nyheter":
+    st.title("📰 Nyheter: Advenica & Mogotes")
+    st.markdown("Senaste nyheterna om dina bolag från Google News.")
+
+    # Lista på bolagen du vill bevaka
+    my_companies = ["Advenica", "Mogotes Metals"]
+
+    col1, col2 = st.columns(2)
+
+    for i, company in enumerate(my_companies):
+        # Välj kolumn
+        current_col = col1 if i % 2 == 0 else col2
+        
+        with current_col:
+            st.header(f"{company}")
+            
+            with st.spinner(f"Söker nyheter om {company}..."):
+                news_items = fetch_company_news(company)
+            
+            if news_items:
+                for item in news_items:
+                    with st.expander(item.title):
+                        # Visa datum om det finns
+                        if 'published' in item:
+                            st.caption(f"📅 {item.published}")
+                        
+                        # Länk till artikeln
+                        st.markdown(f"👉 [Läs hela artikeln]({item.link})")
+            else:
+                st.info(f"Inga nyliga nyheter hittades för {company} just nu.")
+            
+            st.divider()
