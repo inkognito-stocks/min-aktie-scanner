@@ -2,9 +2,18 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+# --- NY FUNKTION: RÄKNA UT RSI ---
+def calculate_rsi(data, window=14):
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/window, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/window, adjust=False).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 # Importera dina listor från den andra filen
-# (Om denna rad blir röd i Cursor, ignorera det så länge filen scanner_tickers.py finns i mappen)
 try:
     from scanner_tickers import sweden_tickers, canada_tickers
 except ImportError:
@@ -38,9 +47,9 @@ if page == "Mina Innehav":
         horizontal=True
     )
 
-    # Initiera session state för vald period
+    # Initiera session state för vald period (12 månader som standard)
     if 'selected_period' not in st.session_state:
-        st.session_state.selected_period = "1y"
+        st.session_state.selected_period = "12mo"
 
     if date_mode == "Snabbknappar":
         # Rullgardin för olika perioder
@@ -100,6 +109,14 @@ if page == "Mina Innehav":
         
         period = None
 
+    # Välj graftyp för prisgrafen (Candlestick som standard)
+    chart_type = st.selectbox(
+        "Välj graftyp:",
+        ["Linje", "Candlestick", "Area"],
+        index=1,  # Candlestick som standard
+        key="chart_type_selectbox"
+    )
+
     # Skapa kolumner för att visa bolagen bredvid varandra
     col1, col2 = st.columns(2)
 
@@ -136,11 +153,84 @@ if page == "Mina Innehav":
                 st.warning(f"Inga data för {ticker}")
                 continue
 
-            # Prisgraf
-            st.line_chart(data['Close'], width='stretch')
+            # --- RSI BERÄKNING ---
+            # Vi behöver minst 14 dagar för att räkna RSI korrekt
+            rsi_value = None
+            rsi_text = "Inväntar data..."
+            rsi_color = "off"
+            
+            if len(data) >= 14:
+                data['RSI'] = calculate_rsi(data)
+                rsi_value = data['RSI'].iloc[-1]
+                
+                # Tolka RSI-värdet
+                if rsi_value < 30:
+                    rsi_text = "🟢 KÖPLÄGE (Översåld)"
+                    rsi_delta_color = "normal" # Grön i Streamlit
+                elif rsi_value > 70:
+                    rsi_text = "🔴 VARNING (Överköpt)"
+                    rsi_delta_color = "inverse" # Röd i Streamlit
+                else:
+                    rsi_text = "⚪ NEUTRAL"
+                    rsi_delta_color = "off" # Grå
 
-            # Volymgraf med staplar
-            st.bar_chart(data['Volume'], width='stretch')
+            # Prisgraf baserat på vald typ
+            if chart_type == "Linje":
+                st.line_chart(data['Close'], width='stretch')
+            elif chart_type == "Candlestick":
+                # Skapa candlestick-graf med Plotly
+                fig = make_subplots(
+                    rows=2, cols=1,
+                    shared_xaxes=True,
+                    vertical_spacing=0.03,
+                    row_heights=[0.7, 0.3],
+                    subplot_titles=(f'{name} - Pris', 'Volym')
+                )
+                
+                # Candlestick
+                fig.add_trace(
+                    go.Candlestick(
+                        x=data.index,
+                        open=data['Open'],
+                        high=data['High'],
+                        low=data['Low'],
+                        close=data['Close'],
+                        name='Pris'
+                    ),
+                    row=1, col=1
+                )
+                
+                # Volym
+                colors = ['red' if data['Close'].iloc[i] < data['Open'].iloc[i] else 'green' 
+                          for i in range(len(data))]
+                fig.add_trace(
+                    go.Bar(
+                        x=data.index,
+                        y=data['Volume'],
+                        name='Volym',
+                        marker_color=colors
+                    ),
+                    row=2, col=1
+                )
+                
+                fig.update_layout(
+                    height=600,
+                    showlegend=False,
+                    xaxis_rangeslider_visible=False,
+                    template='plotly_white'
+                )
+                
+                fig.update_xaxes(title_text="Datum", row=2, col=1)
+                fig.update_yaxes(title_text="Pris", row=1, col=1)
+                fig.update_yaxes(title_text="Volym", row=2, col=1)
+                
+                st.plotly_chart(fig, use_container_width=True)
+            elif chart_type == "Area":
+                st.area_chart(data['Close'], width='stretch')
+
+            # Volymgraf med staplar (visas bara om inte candlestick används)
+            if chart_type != "Candlestick":
+                st.bar_chart(data['Volume'], width='stretch')
 
             # Statistik
             last_close = data['Close'].iloc[-1]
@@ -149,13 +239,32 @@ if page == "Mina Innehav":
 
             latest_volume = data['Volume'].iloc[-1]
             prev_volume = data['Volume'].iloc[-2] if len(data) > 1 else latest_volume
+            
+            # Beräkna volymvärde (volym * pris)
+            currency = 'SEK' if '.ST' in ticker else 'CAD'
+            latest_volume_value = latest_volume * last_close
+            prev_volume_value = prev_volume * prev_close if len(data) > 1 else latest_volume_value
 
-            # Visa siffror
-            st.metric(
-                label="Pris & Utveckling",
-                value=f"{last_close:.2f} {'SEK' if '.ST' in ticker else 'CAD'}",
-                delta=f"{pct_change:.2f} %"
-            )
+            # Visa siffror i kolumner (Pris & RSI)
+            m_col1, m_col2 = st.columns(2)
+            
+            with m_col1:
+                st.metric(
+                    label="Pris & Utveckling",
+                    value=f"{last_close:.2f} {'SEK' if '.ST' in ticker else 'CAD'}",
+                    delta=f"{pct_change:.2f} %"
+                )
+            
+            with m_col2:
+                if rsi_value:
+                    st.metric(
+                        label="RSI Indikator",
+                        value=f"{rsi_value:.1f}",
+                        delta=rsi_text,
+                        delta_color=rsi_delta_color
+                    )
+                else:
+                    st.metric(label="RSI", value="N/A", delta="För lite data")
             
             # Volymjämförelse med färgkodning
             if len(data) > 1:
@@ -164,16 +273,16 @@ if page == "Mina Innehav":
                 
                 # Färgkoda "Volym idag" baserat på jämförelse
                 if volume_change > 0:
-                    st.markdown(f"<span style='color: #00aa00; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st</span>", unsafe_allow_html=True)
-                    st.markdown(f"<span style='color: #000000; font-size: 1.3em;'>Gårdagens volym: {prev_volume:,.0f} st | <span style='color: #00aa00; font-weight: bold;'>↑ {volume_change_pct:.1f}%</span></span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color: #00aa00; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st ({latest_volume_value:,.0f} {currency})</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color: #00aa00; font-size: 1.3em;'>Gårdagens volym: {prev_volume:,.0f} st ({prev_volume_value:,.0f} {currency}) | <span style='font-weight: bold;'>↑ {volume_change_pct:.1f}%</span></span>", unsafe_allow_html=True)
                 elif volume_change < 0:
-                    st.markdown(f"<span style='color: #ff0000; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st</span>", unsafe_allow_html=True)
-                    st.markdown(f"<span style='color: #000000; font-size: 1.3em;'>Gårdagens volym: {prev_volume:,.0f} st | <span style='color: #ff0000; font-weight: bold;'>↓ {abs(volume_change_pct):.1f}%</span></span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color: #ff0000; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st ({latest_volume_value:,.0f} {currency})</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color: #ff0000; font-size: 1.3em;'>Gårdagens volym: {prev_volume:,.0f} st ({prev_volume_value:,.0f} {currency}) | <span style='font-weight: bold;'>↓ {abs(volume_change_pct):.1f}%</span></span>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<span style='color: #000000; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st</span>", unsafe_allow_html=True)
-                    st.markdown(f"<span style='color: #000000; font-size: 1.3em;'>Gårdagens volym: {prev_volume:,.0f} st | → 0%</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color: #000000; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st ({latest_volume_value:,.0f} {currency})</span>", unsafe_allow_html=True)
+                    st.markdown(f"<span style='color: #000000; font-size: 1.3em;'>Gårdagens volym: {prev_volume:,.0f} st ({prev_volume_value:,.0f} {currency}) | → 0%</span>", unsafe_allow_html=True)
             else:
-                st.markdown(f"<span style='color: #000000; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st</span>", unsafe_allow_html=True)
+                st.markdown(f"<span style='color: #000000; font-weight: bold; font-size: 1.4em;'>Volym idag: {latest_volume:,.0f} st ({latest_volume_value:,.0f} {currency})</span>", unsafe_allow_html=True)
                 st.markdown(f"<span style='color: #000000; font-size: 1.3em;'>Gårdagens volym: N/A</span>", unsafe_allow_html=True)
             
             st.divider()
